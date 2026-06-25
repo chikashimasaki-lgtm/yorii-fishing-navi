@@ -1,0 +1,39 @@
+name: 釣り場情報の自動取得
+
+on:
+  schedule:
+    - cron: "0 21,3,9 * * *"   # UTC 21/3/9時 = JST 6/12/18時 に1日3回
+  workflow_dispatch:            # 手動実行も可
+
+permissions:
+  contents: write               # data.json をコミットするため
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: スクレイピング実行
+        run: python3 scrape.py
+
+      - name: data.json をコミット（変更があれば）
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- data.json; then
+            git add data.json
+            git commit -m "釣り場情報を更新 (自動取得) $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+            echo "更新をコミットしました"
+          else
+            echo "変更なし"
+          fi

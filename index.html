@@ -34,6 +34,17 @@
   .champ .main{font-size:1.4rem;font-weight:800;margin:4px 0}
   .champ .tip{color:var(--muted);font-size:.88rem}
   .champ .warn{color:var(--danger);font-size:.85rem;margin-top:6px;font-weight:600}
+  .blog{background:var(--panel);border:1px solid #3a6a4a;border-left:4px solid var(--raigyo);
+        border-radius:12px;padding:12px 14px;margin-bottom:14px}
+  .blog-h{font-weight:700;font-size:.95rem;margin-bottom:6px}
+  .blog-h a{color:var(--raigyo);font-size:.78rem;text-decoration:none}
+  .blog-row{font-size:.88rem;margin:3px 0}
+  .blog-row b{color:var(--namazu)}
+  .blog-row.close b{color:var(--danger)}
+  .blog-note{color:var(--muted);font-size:.72rem;margin-top:6px}
+  .closed-badge{color:var(--danger);font-weight:700;font-size:.8rem}
+  .biz-badge{color:var(--raigyo);font-weight:700;font-size:.8rem}
+  .day.closed{opacity:.5;filter:grayscale(.5)}
   .grid{display:flex;flex-direction:column;gap:8px}
   .day{
     background:var(--panel);border:1px solid var(--line);border-radius:12px;
@@ -167,8 +178,11 @@ async function fetchAll(lat,lon){
     "&past_days=7&forecast_days=7&timezone=Asia%2FTokyo";
   const flU="https://flood-api.open-meteo.com/v1/flood"+
     `?latitude=${lat}&longitude=${lon}&daily=river_discharge&past_days=7&forecast_days=7`;
-  const [wx,fl]=await Promise.all([fetch(wxU).then(r=>r.json()),fetch(flU).then(r=>r.json())]);
-  return {wx,fl};
+  // 釣り場ブログ情報（同一オリジン・GitHub Actionsが定期生成）。失敗しても致命的でない
+  const blog=fetch("./data.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).catch(()=>null);
+  const [wx,fl,bd]=await Promise.all([
+    fetch(wxU).then(r=>r.json()), fetch(flU).then(r=>r.json()), blog]);
+  return {wx,fl,bd};
 }
 
 // ---------- 1日分の計算 ----------
@@ -214,23 +228,43 @@ function buildWeek(wx,fl){
 }
 
 // ---------- 描画 ----------
-function render(week){
+function render(week,blog){
   const el=document.getElementById("content");
   const {days,baseline,today}=week;
+  const closures=new Set((blog&&blog.closures)||[]);
+  const bizMap={};((blog&&blog.business)||[]).forEach(b=>bizMap[b.date]=b.hours);
 
-  // 今週ベスト
+  // 釣り場情報バナー（放流・営業・休業）
+  let banner="";
+  if(blog&&blog.ok){
+    const stock=(blog.stocking||[]).map(s=>`${s.species==="ライギョ"?"🐍":"🐟"} ${s.species} <b>${s.size}</b>`).join("　");
+    const clo=(blog.closures_raw||[]).join("・");
+    banner=`<div class="blog">
+      <div class="blog-h">🎣 寄居フィッシング 釣り場情報 <a href="${blog.source}" target="_blank">ブログ↗</a></div>
+      ${stock?`<div class="blog-row">🐟 放流魚: ${stock}</div>`:""}
+      ${blog.nighter?`<div class="blog-row">🌙 ${blog.nighter}</div>`:""}
+      ${clo?`<div class="blog-row close">🚫 臨時休業: <b>${clo}</b></div>`:""}
+      <div class="blog-note">※ ブログ自動取得（${(blog.fetched_at||"").slice(0,16).replace("T"," ")} 時点）。年は推定。釣行前に要確認。</div>
+    </div>`;
+  }
+
+  // 今週ベスト（休業日は除外して選ぶ）
   let champ=null;
   days.forEach(d=>{
+    if(closures.has(d.date))return;
     [["ナマズ",d.n,"🐟"],["ライギョ",d.r,"🐍"]].forEach(([f,o,ic])=>{
       if(!champ||o.s>champ.s)champ={fish:f,icon:ic,s:o.s,t:o.t,date:d.date,danger:d.danger};
     });
   });
+  if(!champ){  // 全日休業など
+    const d=days[0];champ={fish:"ナマズ",icon:"🐟",s:d.n.s,t:d.n.t,date:d.date,danger:d.danger};
+  }
   const cv=verdict(champ.s), cwd=WDAY[(new Date(champ.date).getDay()+6)%7];
   const tip=champ.fish==="ナマズ"
     ?"増水・濁り＋夜が噛み合う狙い目。波動系トップで流れの緩むカバー・ヨレを撃て。"
     :"高水温・晴天・日中が噛み合う狙い目。フロッグでワンド/水路のカバーを撃て。";
 
-  let html=`<div class="champ">
+  let html=banner+`<div class="champ">
     <div class="tag">🏆 今週のベスト</div>
     <div class="main">${champ.icon} ${champ.fish} — ${champ.date.slice(5)}（${cwd}）${hhmm(champ.t)}
       <span style="font-size:.9rem;color:#ffd700">${cv[0]} ${cv[1]} ${champ.s}</span></div>
@@ -243,8 +277,11 @@ function render(week){
     const nv=verdict(d.n.s), rv=verdict(d.r.s);
     const isToday=d.date===today;
     const wc=wmo(d.wcode);
-    html+=`<div class="day ${d.danger?'danger':''}">
+    const closed=closures.has(d.date);
+    const biz=bizMap[d.date];
+    html+=`<div class="day ${d.danger?'danger':''} ${closed?'closed':''}">
       <div class="wx-row">${wc[0]} ${wc[1]} <b>${d.tmax}°</b><span class="tmin">/${d.tmin}°</span>
+        ${closed?'<span class="closed-badge">🚫 休業</span>':biz?`<span class="biz-badge">🟢 ${biz}</span>`:''}
         ${d.psum>0?`<span class="rain">🌧 ${d.psum}mm</span>`:''}</div>
       <div class="date ${isToday?'today':''}">${d.date.slice(5)}<br><span class="wd">${isToday?'今日':'('+wd+')'}</span></div>
       <div class="fish namazu">
@@ -279,8 +316,8 @@ async function load(){
   el.innerHTML='<div class="loading">📡 データ取得中…</div>';
   try{
     const [lat,lon]=document.getElementById("spot").value.split(",");
-    const {wx,fl}=await fetchAll(lat,lon);
-    render(buildWeek(wx,fl));
+    const {wx,fl,bd}=await fetchAll(lat,lon);
+    render(buildWeek(wx,fl),bd);
   }catch(e){
     el.innerHTML=`<div class="error">取得失敗: ${e.message}<br>ネット接続を確認して再読み込みしてください。</div>`;
   }
