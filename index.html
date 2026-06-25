@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>寄居フィッシング ナマズ・ライギョ 週間釣行ナビ</title>
+<style>
+  :root{
+    --bg:#0d1b2a; --panel:#152a3f; --panel2:#1b3a57; --line:#2a4a6b;
+    --txt:#e6eef5; --muted:#8aa6c0; --namazu:#f2b134; --raigyo:#3ec46d;
+    --danger:#ff5757; --gold:#ffd700;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;
+    background:linear-gradient(160deg,#0d1b2a,#10243a);
+    color:var(--txt);min-height:100vh;padding:18px;line-height:1.5;
+  }
+  .wrap{max-width:760px;margin:0 auto}
+  header{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  header h1{font-size:1.25rem}
+  .sub{color:var(--muted);font-size:.8rem;margin-bottom:16px}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  select,button{
+    background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+    border-radius:8px;padding:8px 12px;font-size:.9rem;cursor:pointer;
+  }
+  button:hover{background:#234a6e}
+  .champ{
+    background:linear-gradient(135deg,#1b3a57,#234a6e);
+    border:1px solid var(--gold);border-radius:14px;padding:16px;margin-bottom:16px;
+  }
+  .champ .tag{color:var(--gold);font-size:.8rem;font-weight:700;letter-spacing:.05em}
+  .champ .main{font-size:1.4rem;font-weight:800;margin:4px 0}
+  .champ .tip{color:var(--muted);font-size:.88rem}
+  .champ .warn{color:var(--danger);font-size:.85rem;margin-top:6px;font-weight:600}
+  .grid{display:flex;flex-direction:column;gap:8px}
+  .day{
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:12px 14px;display:grid;grid-template-columns:64px 1fr 1fr;
+    gap:10px;align-items:center;
+  }
+  .day.danger{border-color:var(--danger);background:#2a1a24}
+  .wx-row{grid-column:1/-1;display:flex;align-items:center;gap:8px;font-size:.92rem;
+          border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:2px}
+  .wx-row b{color:#ff9e6d;font-size:1.05rem}
+  .wx-row .tmin{color:var(--muted);font-size:.82rem}
+  .wx-row .rain{color:#6db8ff;font-size:.82rem;margin-left:auto}
+  .date{font-weight:700}
+  .date .wd{color:var(--muted);font-size:.78rem}
+  .date.today{color:var(--gold)}
+  .env{grid-column:1/-1;display:flex;gap:14px;color:var(--muted);
+       font-size:.74rem;border-top:1px solid var(--line);padding-top:8px;margin-top:2px}
+  .env b{color:var(--txt)}
+  .fish{display:flex;flex-direction:column;gap:2px}
+  .fish .lbl{font-size:.74rem;color:var(--muted)}
+  .fish .val{font-weight:700;font-size:.95rem}
+  .fish.namazu .val{color:var(--namazu)}
+  .fish.raigyo .val{color:var(--raigyo)}
+  .stars{font-size:.78rem}
+  .bar{height:6px;border-radius:3px;background:#0a1623;overflow:hidden;margin-top:3px}
+  .bar i{display:block;height:100%}
+  .fish.namazu .bar i{background:var(--namazu)}
+  .fish.raigyo .bar i{background:var(--raigyo)}
+  .danger-badge{color:var(--danger);font-size:.72rem;font-weight:700}
+  .alert{background:#2a1a24;border:1px solid var(--danger);border-radius:10px;
+         padding:12px;margin-top:14px;font-size:.85rem;color:#ffc9c9}
+  .loading,.error{text-align:center;padding:40px;color:var(--muted)}
+  .error{color:var(--danger)}
+  footer{color:var(--muted);font-size:.72rem;margin-top:18px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><span style="font-size:1.6rem">🎣</span><h1>寄居 ナマズ・ライギョ 週間釣行ナビ</h1></header>
+  <div class="sub" id="sub">荒川流域 / 気象:Open-Meteo・河川流量:GloFAS</div>
+
+  <div class="controls">
+    <select id="spot">
+      <option value="36.1156,139.1936">寄居（荒川本流）</option>
+      <option value="36.0850,139.2300">寄居 下流側</option>
+      <option value="36.1400,139.1600">寄居 上流側</option>
+    </select>
+    <button id="reload">🔄 更新</button>
+  </div>
+
+  <div id="content"><div class="loading">📡 データ取得中…</div></div>
+  <footer>スコアは試作値（0-100）。ナマズ=増水/濁り/夜/低気圧, ライギョ=高水温/晴天/日中 を重視。<br>
+  危険水位日は安全のため釣行非推奨です。実際の水位・気象は必ず公式情報も確認してください。</footer>
+</div>
+
+<script>
+const WDAY=["月","火","水","木","金","土","日"];
+
+// ---------- スコア補助 ----------
+const bell=(x,ideal,w)=>Math.max(0,1-Math.abs(x-ideal)/w);
+function band(x,lo,hi){if(x>=lo&&x<=hi)return 1;const span=(hi-lo)||1;
+  const d=x<lo?lo-x:x-hi;return Math.max(0,1-d/span);}
+const clamp01=v=>Math.max(0,Math.min(1,v));
+
+// ---------- 水温推定(EMA) ----------
+function waterTempSeries(times,temp){
+  const daily={};
+  times.forEach((ts,i)=>{const t=temp[i];if(t==null)return;
+    (daily[ts.slice(0,10)] ||= []).push(t);});
+  const days=Object.keys(daily).sort();
+  const mean={};days.forEach(d=>mean[d]=daily[d].reduce((a,b)=>a+b,0)/daily[d].length);
+  const alpha=0.30;let ema=mean[days[0]];const out={};
+  days.forEach(d=>{ema=alpha*mean[d]+(1-alpha)*ema;out[d]=+(ema-0.5).toFixed(1);});
+  return out;
+}
+
+// ---------- 流量解析 ----------
+function dischargeInfo(flood){
+  const days=flood.daily.time, q=flood.daily.river_discharge;
+  const qmap={};days.forEach((d,i)=>qmap[d]=q[i]);
+  const valid=q.filter(v=>v!=null).sort((a,b)=>a-b);
+  const baseline=valid[Math.floor(valid.length/4)];
+  return {qmap,baseline};
+}
+function dischargeFactors(qToday,qPrev,baseline){
+  const rise=(qToday-qPrev)/Math.max(qPrev,1);
+  const ratio=qToday/Math.max(baseline,1);
+  const fRise=clamp01(rise), fMuddy=clamp01((ratio-1)/4);
+  const danger=ratio>=8||qToday>=200;
+  return {fRise,fMuddy,ratio,danger};
+}
+
+// ---------- 魚種スコア ----------
+function scoreNamazu(wt,fRise,fMuddy,dp,isDay,cloud,wind){
+  const fTemp=band(wt,20,28), fFlow=Math.max(fMuddy,0.6*fRise);
+  const fNight=isDay===0?1:0.30, fPress=bell(dp,-3,6);
+  const fLow=0.7+0.3*band(cloud,50,100), fWind=band(wind,0,18);
+  return 100*(fTemp*0.18+fFlow*0.34+fNight*0.24+fPress*0.12+fLow*0.07+fWind*0.05);
+}
+function scoreRaigyo(wt,tmax,fMuddy,wind,isDay,cloud){
+  const fTemp=clamp01((wt-22)/10), fHot=clamp01((tmax-28)/7);
+  const fDay=isDay===1?1:0.20, fSun=band(cloud,0,40);
+  const fCalm=band(wind,0,12), fClear=1-0.6*fMuddy;
+  return 100*(fTemp*0.30+fHot*0.18+fDay*0.20+fSun*0.16+fCalm*0.10+fClear*0.06);
+}
+const verdict=s=>s>=80?["★★★","絶好"]:s>=65?["★★☆","良"]:s>=50?["★☆☆","ふつう"]:["☆☆☆","渋い"];
+const hhmm=ts=>parseInt(ts.slice(11,13))+"時";
+
+// WMO天気コード → アイコン＋名称
+function wmo(code){
+  if(code===0)return["☀️","快晴"];
+  if(code<=2)return["🌤️","晴れ"];
+  if(code===3)return["☁️","曇り"];
+  if(code<=48)return["🌫️","霧"];
+  if(code<=57)return["🌧️","霧雨"];
+  if(code<=65)return["🌧️","雨"];
+  if(code<=67)return["🌧️","冷雨"];
+  if(code<=77)return["🌨️","雪"];
+  if(code<=82)return["🌦️","にわか雨"];
+  if(code<=86)return["🌨️","にわか雪"];
+  if(code<=99)return["⛈️","雷雨"];
+  return["🌡️","—"];
+}
+
+// ---------- データ取得 ----------
+async function fetchAll(lat,lon){
+  const wxU="https://api.open-meteo.com/v1/forecast"+
+    `?latitude=${lat}&longitude=${lon}`+
+    "&hourly=temperature_2m,precipitation,pressure_msl,wind_speed_10m,cloud_cover,is_day"+
+    "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code"+
+    "&past_days=7&forecast_days=7&timezone=Asia%2FTokyo";
+  const flU="https://flood-api.open-meteo.com/v1/flood"+
+    `?latitude=${lat}&longitude=${lon}&daily=river_discharge&past_days=7&forecast_days=7`;
+  const [wx,fl]=await Promise.all([fetch(wxU).then(r=>r.json()),fetch(flU).then(r=>r.json())]);
+  return {wx,fl};
+}
+
+// ---------- 1日分の計算 ----------
+function buildWeek(wx,fl){
+  const h=wx.hourly, times=h.time, temp=h.temperature_2m, press=h.pressure_msl,
+        wind=h.wind_speed_10m, cloud=h.cloud_cover, isday=h.is_day;
+  const tmax={},tmin={},psum={},wcode={};
+  wx.daily.time.forEach((d,i)=>{
+    tmax[d]=wx.daily.temperature_2m_max[i];
+    tmin[d]=wx.daily.temperature_2m_min[i];
+    psum[d]=wx.daily.precipitation_sum[i];
+    wcode[d]=wx.daily.weather_code[i];
+  });
+  const water=waterTempSeries(times,temp);
+  const {qmap,baseline}=dischargeInfo(fl);
+
+  const today=new Date().toISOString().slice(0,10);
+  const byDay={};
+  times.forEach((ts,i)=>{const d=ts.slice(0,10);if(d>=today)(byDay[d] ||= []).push(i);});
+  const days=Object.keys(byDay).sort().slice(0,7);
+
+  const out=days.map(d=>{
+    const idxs=byDay[d], wt=water[d]??temp[idxs[0]];
+    const qToday=qmap[d]??baseline;
+    const prev=Object.keys(qmap).filter(x=>x<d).sort();
+    const qPrev=prev.length?qmap[prev[prev.length-1]]:qToday;
+    const {fRise,fMuddy,ratio,danger}=dischargeFactors(qToday,qPrev,baseline);
+    const tmx=tmax[d]??temp[idxs[0]];
+    let bN={s:-1,i:null}, bR={s:-1,i:null};
+    idxs.forEach(i=>{
+      const dp=i>=3?press[i]-press[i-3]:0;
+      const sN=scoreNamazu(wt,fRise,fMuddy,dp,isday[i],cloud[i],wind[i]);
+      const sR=scoreRaigyo(wt,tmx,fMuddy,wind[i],isday[i],cloud[i]);
+      if(sN>bN.s)bN={s:sN,i};
+      if(sR>bR.s)bR={s:sR,i};
+    });
+    return {date:d,wt,q:qToday,ratio,danger,
+            tmax:Math.round(tmx),tmin:Math.round(tmin[d]??temp[idxs[0]]),
+            psum:+(psum[d]??0).toFixed(1),wcode:wcode[d]??0,
+            n:{s:+bN.s.toFixed(1),t:times[bN.i]}, r:{s:+bR.s.toFixed(1),t:times[bR.i]}};
+  });
+  return {days:out,baseline,today};
+}
+
+// ---------- 描画 ----------
+function render(week){
+  const el=document.getElementById("content");
+  const {days,baseline,today}=week;
+
+  // 今週ベスト
+  let champ=null;
+  days.forEach(d=>{
+    [["ナマズ",d.n,"🐟"],["ライギョ",d.r,"🐍"]].forEach(([f,o,ic])=>{
+      if(!champ||o.s>champ.s)champ={fish:f,icon:ic,s:o.s,t:o.t,date:d.date,danger:d.danger};
+    });
+  });
+  const cv=verdict(champ.s), cwd=WDAY[(new Date(champ.date).getDay()+6)%7];
+  const tip=champ.fish==="ナマズ"
+    ?"増水・濁り＋夜が噛み合う狙い目。波動系トップで流れの緩むカバー・ヨレを撃て。"
+    :"高水温・晴天・日中が噛み合う狙い目。フロッグでワンド/水路のカバーを撃て。";
+
+  let html=`<div class="champ">
+    <div class="tag">🏆 今週のベスト</div>
+    <div class="main">${champ.icon} ${champ.fish} — ${champ.date.slice(5)}（${cwd}）${hhmm(champ.t)}
+      <span style="font-size:.9rem;color:#ffd700">${cv[0]} ${cv[1]} ${champ.s}</span></div>
+    <div class="tip">${tip}</div>
+    ${champ.danger?'<div class="warn">⚠ この日は荒川が増水（平水の数倍）。濁り過多＆危険、無理は禁物。減水を待て。</div>':''}
+  </div><div class="grid">`;
+
+  days.forEach(d=>{
+    const wd=WDAY[(new Date(d.date).getDay()+6)%7];
+    const nv=verdict(d.n.s), rv=verdict(d.r.s);
+    const isToday=d.date===today;
+    const wc=wmo(d.wcode);
+    html+=`<div class="day ${d.danger?'danger':''}">
+      <div class="wx-row">${wc[0]} ${wc[1]} <b>${d.tmax}°</b><span class="tmin">/${d.tmin}°</span>
+        ${d.psum>0?`<span class="rain">🌧 ${d.psum}mm</span>`:''}</div>
+      <div class="date ${isToday?'today':''}">${d.date.slice(5)}<br><span class="wd">${isToday?'今日':'('+wd+')'}</span></div>
+      <div class="fish namazu">
+        <span class="lbl">🐟 ナマズ ベスト</span>
+        <span class="val">${hhmm(d.n.t)} <span class="stars">${nv[0]} ${nv[1]}</span></span>
+        <div class="bar"><i style="width:${d.n.s}%"></i></div></div>
+      <div class="fish raigyo">
+        <span class="lbl">🐍 ライギョ ベスト</span>
+        <span class="val">${hhmm(d.r.t)} <span class="stars">${rv[0]} ${rv[1]}</span></span>
+        <div class="bar"><i style="width:${d.r.s}%"></i></div></div>
+      <div class="env">
+        <span>水温 <b>${d.wt}℃</b></span>
+        <span>流量 <b>${Math.round(d.q)} m³/s</b></span>
+        <span>平水比 <b>${d.ratio.toFixed(1)}x</b></span>
+        ${d.danger?'<span class="danger-badge">⚠ 増水・危険水位</span>':''}
+      </div>
+    </div>`;
+  });
+  html+="</div>";
+
+  const dl=days.filter(d=>d.danger).map(d=>d.date.slice(5)+"("+WDAY[(new Date(d.date).getDay()+6)%7]+")");
+  if(dl.length)html+=`<div class="alert">⚠ 増水・危険水位日: <b>${dl.join(", ")}</b><br>
+    川通いを避け、流量が落ち着いてからの釣行を。安全第一で。</div>`;
+
+  el.innerHTML=html;
+  document.getElementById("sub").textContent=
+    `荒川流域 / 平水≒${Math.round(baseline)} m³/s ・ 更新 ${new Date().toLocaleString("ja-JP")}`;
+}
+
+async function load(){
+  const el=document.getElementById("content");
+  el.innerHTML='<div class="loading">📡 データ取得中…</div>';
+  try{
+    const [lat,lon]=document.getElementById("spot").value.split(",");
+    const {wx,fl}=await fetchAll(lat,lon);
+    render(buildWeek(wx,fl));
+  }catch(e){
+    el.innerHTML=`<div class="error">取得失敗: ${e.message}<br>ネット接続を確認して再読み込みしてください。</div>`;
+  }
+}
+document.getElementById("reload").onclick=load;
+document.getElementById("spot").onchange=load;
+load();
+</script>
+</body>
+</html>
