@@ -8,7 +8,7 @@
   :root{
     --bg:#0d1b2a; --panel:#152a3f; --panel2:#1b3a57; --line:#2a4a6b;
     --txt:#e6eef5; --muted:#8aa6c0; --namazu:#f2b134; --raigyo:#3ec46d;
-    --danger:#ff5757; --gold:#ffd700;
+    --danger:#ff5757; --gold:#ffd700; --accent:#27c4d9;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{
@@ -41,6 +41,9 @@
   .blog-row{font-size:.88rem;margin:3px 0}
   .blog-row b{color:var(--namazu)}
   .blog-row.close b{color:var(--danger)}
+  .blog-row.latest{background:#0e2c3e;border-left:3px solid var(--accent);border-radius:6px;padding:6px 9px;margin:5px 0}
+  .blog-row.latest b{color:#7fe0ec}
+  .blog-row.latest a{color:var(--accent);font-size:.78rem;text-decoration:none;white-space:nowrap}
   .blog-note{color:var(--muted);font-size:.72rem;margin-top:6px}
   .closed-badge{color:var(--danger);font-weight:700;font-size:.8rem}
   .biz-badge{color:var(--raigyo);font-weight:700;font-size:.8rem}
@@ -186,7 +189,7 @@ async function fetchAll(lat,lon){
 }
 
 // ---------- 1日分の計算 ----------
-function buildWeek(wx,fl){
+function buildWeek(wx,fl,blog){
   const h=wx.hourly, times=h.time, temp=h.temperature_2m, press=h.pressure_msl,
         wind=h.wind_speed_10m, cloud=h.cloud_cover, isday=h.is_day;
   const tmax={},tmin={},psum={},wcode={};
@@ -203,6 +206,7 @@ function buildWeek(wx,fl){
   const byDay={};
   times.forEach((ts,i)=>{const d=ts.slice(0,10);if(d>=today)(byDay[d] ||= []).push(i);});
   const days=Object.keys(byDay).sort().slice(0,7);
+  const HRS=(blog&&blog.hours)||{open:7,close:16,sat_close:21};   // 営業時間(平日7-16/土21)
 
   const out=days.map(d=>{
     const idxs=byDay[d], wt=water[d]??temp[idxs[0]];
@@ -211,8 +215,13 @@ function buildWeek(wx,fl){
     const qPrev=prev.length?qmap[prev[prev.length-1]]:qToday;
     const {fRise,fMuddy,ratio,danger}=dischargeFactors(qToday,qPrev,baseline);
     const tmx=tmax[d]??temp[idxs[0]];
+    // ベスト時間は営業時間内に限定（土曜はナイターでsat_closeまで）
+    const wd=new Date(d+'T00:00:00+09:00').getDay();   // 0=日..6=土
+    const close=(wd===6?(HRS.sat_close||HRS.close):HRS.close);
+    let opIdxs=idxs.filter(i=>{const hh=+times[i].slice(11,13);return hh>=HRS.open&&hh<close;});
+    if(!opIdxs.length) opIdxs=idxs;
     let bN={s:-1,i:null}, bR={s:-1,i:null};
-    idxs.forEach(i=>{
+    opIdxs.forEach(i=>{
       const dp=i>=3?press[i]-press[i-3]:0;
       const sN=scoreNamazu(wt,fRise,fMuddy,dp,isday[i],cloud[i],wind[i]);
       const sR=scoreRaigyo(wt,tmx,fMuddy,wind[i],isday[i],cloud[i]);
@@ -239,12 +248,16 @@ function render(week,blog){
   if(blog&&blog.ok){
     const stock=(blog.stocking||[]).map(s=>`${s.species==="ライギョ"?"🐍":"🐟"} ${s.species} <b>${s.size}</b>`).join("　");
     const clo=(blog.closures_raw||[]).join("・");
+    const ls=blog.latest_stocking;
+    const h=blog.hours;
     banner=`<div class="blog">
       <div class="blog-h">🎣 寄居フィッシング 釣り場情報 <a href="${blog.source}" target="_blank">ブログ↗</a></div>
-      ${stock?`<div class="blog-row">🐟 放流魚: ${stock}</div>`:""}
+      ${ls&&ls.text?`<div class="blog-row latest">🆕 最新の放流情報${ls.date?`（${ls.date}）`:""}: <b>${ls.text}</b> <a href="${ls.url}" target="_blank">記事↗</a></div>`:""}
+      ${stock?`<div class="blog-row">🐟 放流魚サイズ: ${stock}</div>`:""}
+      ${h?`<div class="blog-row">🕖 営業時間: 平日 ${h.open}:00〜${h.close}:00 / 土曜ナイター ${h.sat_close}:00まで</div>`:""}
       ${blog.nighter?`<div class="blog-row">🌙 ${blog.nighter}</div>`:""}
-      ${clo?`<div class="blog-row close">🚫 臨時休業: <b>${clo}</b></div>`:""}
-      <div class="blog-note">※ ブログ自動取得（${(blog.fetched_at||"").slice(0,16).replace("T"," ")} 時点）。年は推定。釣行前に要確認。</div>
+      <div class="blog-row close">🚫 臨時休業: <b>${clo||"直近の告知なし"}</b></div>
+      <div class="blog-note">※ ブログ自動取得（${(blog.fetched_at||"").slice(0,16).replace("T"," ")} 時点）。年は推定。釣行前に要確認。ベスト時間は営業時間内で算出。</div>
     </div>`;
   }
 
@@ -317,7 +330,7 @@ async function load(){
   try{
     const [lat,lon]=document.getElementById("spot").value.split(",");
     const {wx,fl,bd}=await fetchAll(lat,lon);
-    render(buildWeek(wx,fl),bd);
+    render(buildWeek(wx,fl,bd),bd);
   }catch(e){
     el.innerHTML=`<div class="error">取得失敗: ${e.message}<br>ネット接続を確認して再読み込みしてください。</div>`;
   }

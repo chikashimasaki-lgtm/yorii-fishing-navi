@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 寄居フィッシング ブログ(ameblo.jp/minmin0507) から
-休業日・営業情報・放流情報を抽出して data.json を生成する。
+最新の放流情報・将来の休業日・営業情報・放流魚サイズ・料金を抽出して data.json を生成する。
 
 GitHub Actions から定期実行する想定。ブラウザはCORSで直接ブログを叩けないため、
 サーバー側(Actions)で取得→同一オリジンのJSONとして配信する。
@@ -12,50 +12,51 @@ import html as ht
 import urllib.request
 from datetime import datetime, timezone, timedelta
 
-URL = "https://ameblo.jp/minmin0507/"
+BASE = "https://ameblo.jp/minmin0507"
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 JST = timezone(timedelta(hours=9))
-
 Z2H = str.maketrans("０１２３４５６７８９：～", "0123456789:~")
 
 
-def fetch_html():
-    req = urllib.request.Request(URL, headers={"User-Agent": UA})
+def fetch(url):
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=25) as r:
         return r.read().decode("utf-8", "replace")
 
 
-def extract_article_text(html):
-    """記事本文の領域をキーワードで特定し、タグ除去してテキスト化"""
-    # エスケープ済みHTMLを通常HTMLに戻す
-    h = html.replace("\\u003C", "<").replace("\\u003E", ">")
-    h = h.replace("\\n", "\n").replace("\\/", "/").replace('\\"', '"')
-
-    # 記事の開始/終了をキーワードで推定
-    starts = [h.find(k) for k in ("必ず読んで", "臨時休業", "休業日", "放流魚")]
-    starts = [s for s in starts if s >= 0]
-    if not starts:
-        body = h
-    else:
-        start = max(0, min(starts) - 400)
-        ends = [h.find(k, min(starts)) for k in ("割引", "料金表", "お待ち", "LINE会員")]
-        ends = [e for e in ends if e >= 0]
-        end = (max(ends) + 200) if ends else (min(starts) + 3000)
-        body = h[start:end]
-
-    body = re.sub(r"<[^>]+>", " ", body)
-    body = ht.unescape(body)
-    body = re.sub(r"[ \t　]+", " ", body)
-    return body.strip()
+def list_entries():
+    """最近記事を新しい順に [(id, title), ...] で返す"""
+    h = fetch(BASE + "/entrylist.html")
+    seen, out = set(), []
+    for eid, title in re.findall(r'/entry-(\d+)\.html"[^>]*>([^<]{3,80})', h):
+        if eid in seen:
+            continue
+        seen.add(eid)
+        out.append((eid, ht.unescape(title).strip()))
+    return out
 
 
-def to_iso(month, day, year):
-    return f"{year:04d}-{int(month):02d}-{int(day):02d}"
+def entry(eid):
+    """記事の (投稿日YYYY-MM-DD, 本文プレーンテキスト) を返す"""
+    h = fetch(f"{BASE}/entry-{eid}.html")
+    dm = re.search(r'"datePublished":"(\d{4}-\d{2}-\d{2})', h)
+    date = dm.group(1) if dm else None
+    hh = (h.replace("\\u003C", "<").replace("\\u003E", ">")
+            .replace("\\n", "\n").replace("\\/", "/"))
+    plain = re.sub(r"<[^>]+>", " ", hh)
+    plain = re.sub(r"[ \t　]+", " ", ht.unescape(plain))
+    s = plain.find("毎日特典付き")            # 本文の定型開始
+    body = plain[s:] if s >= 0 else plain
+    for end in ("いいね！した", "コメント(", "リブログ", "アメンバー", "フォロー"):
+        e = body.find(end, 200)
+        if e > 0:
+            body = body[:e]
+            break
+    return date, body.translate(Z2H)
 
 
 def infer_year(month, day, now):
-    """年なし日付に年を補完。過ぎていれば来年扱い（半年以上前なら翌年）"""
     y = now.year
     try:
         d = datetime(y, int(month), int(day), tzinfo=JST)
@@ -66,69 +67,84 @@ def infer_year(month, day, now):
     return y
 
 
-def parse(text, now):
-    t = text.translate(Z2H)
-    data = {
-        "source": URL,
-        "fetched_at": now.isoformat(timespec="seconds"),
-        "closures": [], "closures_raw": [],
-        "business": [], "nighter": None,
-        "stocking": [], "pricing": [],
-        "year_inferred": True,
-    }
-
-    # 記事タイトル
-    mt = re.search(r"(ライギョ[^！\n。]{0,30}[！!]?)", t)
-    data["title"] = mt.group(1).strip() if mt else ""
-
-    # --- 臨時休業ブロック内の日付 ---
-    mb = re.search(r"臨時休業(.*?)(?:明日|営業|放流|料金|お願い|その他|$)", t, re.S)
-    block = mb.group(1) if mb else ""
-    for mm, dd in re.findall(r"(\d{1,2})月(\d{1,2})日", block):
-        y = infer_year(mm, dd, now)
-        iso = to_iso(mm, dd, y)
-        if iso not in data["closures"]:
-            data["closures"].append(iso)
-            data["closures_raw"].append(f"{int(mm)}月{int(dd)}日")
-
-    # --- 営業時間（「N月N日(...) 朝7時～16時」型）---
-    for mm, dd, h1, h2 in re.findall(
-            r"(\d{1,2})月(\d{1,2})日\s*\([^)]*\)\s*朝?\s*(\d{1,2})時\s*~\s*(\d{1,2})時", t):
-        y = infer_year(mm, dd, now)
-        data["business"].append(
-            {"date": to_iso(mm, dd, y), "hours": f"{int(h1)}:00-{int(h2)}:00"})
-
-    # --- ナイター ---
-    mn = re.search(r"(土曜[^。\n]*ナイター[^。\n]*?(\d{1,2})時[^。\n]*)", t)
-    if mn:
-        data["nighter"] = re.sub(r"\s+", " ", mn.group(1)).strip()
-
-    # --- 放流魚 ---
-    for sp in ("ライギョ", "ナマズ"):
-        m = re.search(sp + r"\s*(\d{1,3})\s*cm\s*~\s*(\d{1,3})\s*cm", t)
-        if m:
-            data["stocking"].append(
-                {"species": sp, "size": f"{int(m.group(1))}cm〜{int(m.group(2))}cm"})
-
-    # --- 料金表 ---
-    for hours, yen in re.findall(r"(\d{1,2})\s*時間\s*(\d{3,5})\s*円", t):
-        data["pricing"].append({"plan": f"{int(hours)}時間", "yen": int(yen)})
-    md = re.search(r"1日\s*(\d{3,5})\s*円", t)
-    if md:
-        data["pricing"].append({"plan": "1日", "yen": int(md.group(1))})
-
-    return data
+def future_closures(text, now):
+    """臨時休業の日付のうち、今日以降のものだけを返す"""
+    iso_list, raw_list = [], []
+    for mb in re.finditer(r"臨時休業(.{0,140})", text, re.S):
+        for mm, dd in re.findall(r"(\d{1,2})月(\d{1,2})日", mb.group(1)):
+            y = infer_year(mm, dd, now)
+            iso = f"{y:04d}-{int(mm):02d}-{int(dd):02d}"
+            d = datetime(y, int(mm), int(dd), tzinfo=JST).date()
+            if d >= now.date() and iso not in iso_list:
+                iso_list.append(iso)
+                raw_list.append(f"{int(mm)}月{int(dd)}日")
+    return iso_list, raw_list
 
 
 def main():
     now = datetime.now(JST)
+    data = {
+        "source": BASE + "/",
+        "fetched_at": now.isoformat(timespec="seconds"),
+        "closures": [], "closures_raw": [],
+        "nighter": None, "stocking": [], "pricing": [],
+        "latest_stocking": None,
+        "hours": {"open": 7, "close": 16, "sat_close": 21},  # 平日7-16/土ナイター21時
+        "year_inferred": True,
+    }
     try:
-        html = fetch_html()
-        data = parse(extract_article_text(html), now)
+        entries = list_entries()[:6]
+        bodies = []
+        for eid, title in entries:
+            try:
+                date, body = entry(eid)
+                bodies.append({"id": eid, "title": title, "date": date, "body": body})
+            except Exception:
+                continue
+
+        # --- 最新の放流情報（放流を含む最新記事） ---
+        for b in bodies:
+            if "放流" in b["body"] or "放流" in b["title"]:
+                sents = re.split(r"[。\n]", b["body"])
+                hits = [s.strip() for s in sents if "放流" in s and len(s.strip()) <= 60]
+                text = "。".join(hits[:3]).strip()
+                if not text:
+                    text = b["title"]
+                data["latest_stocking"] = {
+                    "date": b["date"], "title": b["title"],
+                    "url": f"{BASE}/entry-{b['id']}.html", "text": text}
+                break
+
+        # --- 将来の休業日（複数記事を横断して収集） ---
+        allbody = "\n".join(b["body"] for b in bodies)
+        data["closures"], data["closures_raw"] = future_closures(allbody, now)
+
+        # --- 放流魚サイズ・ナイター・料金（記載のある記事から） ---
+        for b in bodies:
+            t = b["body"]
+            if not data["stocking"]:
+                for sp in ("ライギョ", "ナマズ"):
+                    m = re.search(sp + r"\s*(\d{1,3})\s*cm\s*~\s*(\d{1,3})\s*cm", t)
+                    if m:
+                        data["stocking"].append(
+                            {"species": sp, "size": f"{int(m.group(1))}cm〜{int(m.group(2))}cm"})
+            if not data["nighter"]:
+                mn = re.search(r"(土曜[^。\n]*ナイター[^。\n]*?(\d{1,2})時[^。\n]*)", t)
+                if mn:
+                    data["nighter"] = re.sub(r"\s+", " ", mn.group(1)).strip()
+            if not data["pricing"]:
+                seen_plan = set()
+                for hours, yen in re.findall(r"(\d{1,2})\s*時間\s*(\d{3,5})\s*円", t):
+                    plan = f"{int(hours)}時間"
+                    if plan in seen_plan:
+                        continue
+                    seen_plan.add(plan)
+                    data["pricing"].append({"plan": plan, "yen": int(yen)})
+
         data["ok"] = True
     except Exception as e:
-        data = {"ok": False, "error": str(e),
-                "fetched_at": now.isoformat(timespec="seconds"), "source": URL}
+        data["ok"] = False
+        data["error"] = str(e)
 
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
