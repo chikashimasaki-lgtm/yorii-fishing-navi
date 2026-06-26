@@ -199,7 +199,7 @@ function buildWeek(wx,fl){
   const water=waterTempSeries(times,temp);
   const {qmap,baseline}=dischargeInfo(fl);
 
-  const today=new Date().toISOString().slice(0,10);
+  const today=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tokyo'}); // JST基準の今日(YYYY-MM-DD)
   const byDay={};
   times.forEach((ts,i)=>{const d=ts.slice(0,10);if(d>=today)(byDay[d] ||= []).push(i);});
   const days=Object.keys(byDay).sort().slice(0,7);
