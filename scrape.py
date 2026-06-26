@@ -119,6 +119,18 @@ def main():
         allbody = "\n".join(b["body"] for b in bodies)
         data["closures"], data["closures_raw"] = future_closures(allbody, now)
 
+        # --- 日付別の実営業時間（「N月N日(曜日) 朝H時~H時まで」を抽出。新しい記事優先） ---
+        hbd = {}
+        for b in bodies:   # bodiesは新しい順
+            for mm, dd, h1, h2 in re.findall(
+                    r"(\d{1,2})月(\d{1,2})日\s*\([^)]*\)\s*朝?\s*(\d{1,2})時\s*~\s*(\d{1,2})時",
+                    b["body"]):
+                y = infer_year(mm, dd, now)
+                iso = f"{y:04d}-{int(mm):02d}-{int(dd):02d}"
+                if iso not in hbd:
+                    hbd[iso] = [int(h1), int(h2)]
+        data["hours_by_date"] = hbd
+
         # --- 放流魚サイズ・ナイター・料金（記載のある記事から） ---
         for b in bodies:
             t = b["body"]

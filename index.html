@@ -206,7 +206,8 @@ function buildWeek(wx,fl,blog){
   const byDay={};
   times.forEach((ts,i)=>{const d=ts.slice(0,10);if(d>=today)(byDay[d] ||= []).push(i);});
   const days=Object.keys(byDay).sort().slice(0,7);
-  const HRS=(blog&&blog.hours)||{open:7,close:16,sat_close:21};   // 営業時間(平日7-16/土21)
+  const HRS=(blog&&blog.hours)||{open:7,close:16,sat_close:21};   // 既定営業時間(平日7-16/土21)
+  const HBD=(blog&&blog.hours_by_date)||{};                        // ブログ告知の日付別実営業時間
 
   const out=days.map(d=>{
     const idxs=byDay[d], wt=water[d]??temp[idxs[0]];
@@ -215,10 +216,11 @@ function buildWeek(wx,fl,blog){
     const qPrev=prev.length?qmap[prev[prev.length-1]]:qToday;
     const {fRise,fMuddy,ratio,danger}=dischargeFactors(qToday,qPrev,baseline);
     const tmx=tmax[d]??temp[idxs[0]];
-    // ベスト時間は営業時間内に限定（土曜はナイターでsat_closeまで）
+    // ベスト時間は営業時間内に限定。ブログ告知の実時間(HBD)があれば優先、無ければ既定
     const wd=new Date(d+'T00:00:00+09:00').getDay();   // 0=日..6=土
-    const close=(wd===6?(HRS.sat_close||HRS.close):HRS.close);
-    let opIdxs=idxs.filter(i=>{const hh=+times[i].slice(11,13);return hh>=HRS.open&&hh<close;});
+    const open=HBD[d]?HBD[d][0]:HRS.open;
+    const close=HBD[d]?HBD[d][1]:(wd===6?(HRS.sat_close||HRS.close):HRS.close);
+    let opIdxs=idxs.filter(i=>{const hh=+times[i].slice(11,13);return hh>=open&&hh<close;});
     if(!opIdxs.length) opIdxs=idxs;
     let bN={s:-1,i:null}, bR={s:-1,i:null};
     opIdxs.forEach(i=>{
@@ -231,6 +233,7 @@ function buildWeek(wx,fl,blog){
     return {date:d,wt,q:qToday,ratio,danger,
             tmax:Math.round(tmx),tmin:Math.round(tmin[d]??temp[idxs[0]]),
             psum:+(psum[d]??0).toFixed(1),wcode:wcode[d]??0,
+            open,close,hoursKnown:!!HBD[d],
             n:{s:+bN.s.toFixed(1),t:times[bN.i]}, r:{s:+bR.s.toFixed(1),t:times[bR.i]}};
   });
   return {days:out,baseline,today};
@@ -241,7 +244,6 @@ function render(week,blog){
   const el=document.getElementById("content");
   const {days,baseline,today}=week;
   const closures=new Set((blog&&blog.closures)||[]);
-  const bizMap={};((blog&&blog.business)||[]).forEach(b=>bizMap[b.date]=b.hours);
 
   // 釣り場情報バナー（放流・営業・休業）
   let banner="";
@@ -291,10 +293,10 @@ function render(week,blog){
     const isToday=d.date===today;
     const wc=wmo(d.wcode);
     const closed=closures.has(d.date);
-    const biz=bizMap[d.date];
+    const bizTxt=`${d.open}:00-${d.close}:00`+(d.hoursKnown?'':'(目安)');
     html+=`<div class="day ${d.danger?'danger':''} ${closed?'closed':''}">
       <div class="wx-row">${wc[0]} ${wc[1]} <b>${d.tmax}°</b><span class="tmin">/${d.tmin}°</span>
-        ${closed?'<span class="closed-badge">🚫 休業</span>':biz?`<span class="biz-badge">🟢 ${biz}</span>`:''}
+        ${closed?'<span class="closed-badge">🚫 休業</span>':`<span class="biz-badge">🟢 ${bizTxt}</span>`}
         ${d.psum>0?`<span class="rain">🌧 ${d.psum}mm</span>`:''}</div>
       <div class="date ${isToday?'today':''}">${d.date.slice(5)}<br><span class="wd">${isToday?'今日':'('+wd+')'}</span></div>
       <div class="fish namazu">
