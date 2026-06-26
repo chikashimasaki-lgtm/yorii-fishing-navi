@@ -1,23 +1,15 @@
 {
   "source": "https://ameblo.jp/minmin0507/",
-  "fetched_at": "2026-06-26T07:24:20+09:00",
-  "closures": [
-    "2026-06-23",
-    "2026-06-25",
-    "2026-06-26"
-  ],
-  "closures_raw": [
-    "6月23日",
-    "6月25日",
-    "6月26日"
-  ],
+  "fetched_at": "2026-06-26T15:58:54+09:00",
+  "closures": [],
+  "closures_raw": [],
   "business": [
     {
-      "date": "2026-06-24",
-      "hours": "7:00-16:00"
+      "date": "2026-06-27",
+      "hours": "7:00-21:00"
     }
   ],
-  "nighter": "土曜日 ナイター開催予定 (21時まで)",
+  "nighter": null,
   "stocking": [
     {
       "species": "ライギョ",
@@ -47,6 +39,6 @@
     }
   ],
   "year_inferred": true,
-  "title": "ライギョ&ナマズ！",
+  "title": "ライギョ 40cm~90cm",
   "ok": true
 }
