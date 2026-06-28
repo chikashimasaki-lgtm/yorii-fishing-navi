@@ -44,6 +44,9 @@ def entry(eid):
     date = dm.group(1) if dm else None
     hh = (h.replace("\\u003C", "<").replace("\\u003E", ">")
             .replace("\\n", "\n").replace("\\/", "/"))
+    # script/style の中身（改行・句点の無い長大なJS/CSS）を先に除去（本文への混入を防ぐ）
+    hh = re.sub(r"<script[^>]*>.*?</script>", " ", hh, flags=re.S | re.I)
+    hh = re.sub(r"<style[^>]*>.*?</style>", " ", hh, flags=re.S | re.I)
     plain = re.sub(r"<[^>]+>", " ", hh)
     plain = re.sub(r"[ \t　]+", " ", ht.unescape(plain))
     s = plain.find("毎日特典付き")            # 本文の定型開始
@@ -141,9 +144,9 @@ def main():
                         data["stocking"].append(
                             {"species": sp, "size": f"{int(m.group(1))}cm〜{int(m.group(2))}cm"})
             if not data["nighter"]:
-                mn = re.search(r"(土曜[^。\n]*ナイター[^。\n]*?(\d{1,2})時[^。\n]*)", t)
+                mn = re.search(r"(土曜[^。\n]{0,20}ナイター[^。\n]{0,20}?(\d{1,2})時[^。\n]{0,8})", t)
                 if mn:
-                    data["nighter"] = re.sub(r"\s+", " ", mn.group(1)).strip()
+                    data["nighter"] = re.sub(r"\s+", " ", mn.group(1)).strip()[:60]
             if not data["pricing"]:
                 seen_plan = set()
                 for hours, yen in re.findall(r"(\d{1,2})\s*時間\s*(\d{3,5})\s*円", t):
