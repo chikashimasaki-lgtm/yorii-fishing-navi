@@ -1,13 +1,15 @@
 {
   "source": "https://ameblo.jp/minmin0507/",
-  "fetched_at": "2026-08-05T14:50:13+09:00",
+  "fetched_at": "2026-08-05T20:24:08+09:00",
   "closures": [
-    "2026-08-05",
-    "2026-08-07"
+    "2026-08-07",
+    "2026-08-06",
+    "2026-08-05"
   ],
   "closures_raw": [
-    "8月5日",
-    "8月7日"
+    "8月7日",
+    "8月6日",
+    "8月5日"
   ],
   "nighter": "土曜日 は ナイター開催 の為 夜9時まで営業",
   "stocking": [
@@ -35,9 +37,9 @@
     }
   ],
   "latest_stocking": {
-    "date": "2026-08-03",
-    "title": "ライギョ&ナマズ！ 絶好調。",
-    "url": "https://ameblo.jp/minmin0507/entry-12974638050.html",
+    "date": "2026-08-05",
+    "title": "ライギョ&ナマズ！ 明日７時オープン☆",
+    "url": "https://ameblo.jp/minmin0507/entry-12974847459.html",
     "text": "~放流魚~ ライギョ 40cm~90cm"
   },
   "hours": {
