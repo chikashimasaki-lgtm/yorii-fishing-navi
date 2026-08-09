@@ -7,6 +7,7 @@ GitHub Actions から定期実行する想定。ブラウザはCORSで直接ブ�
 サーバー側(Actions)で取得→同一オリジンのJSONとして配信する。
 """
 import re
+import sys
 import json
 import html as ht
 import urllib.request
@@ -161,9 +162,16 @@ def main():
         data["ok"] = False
         data["error"] = str(e)
 
-    with open("data.json", "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    if data["ok"]:
+        with open("data.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    else:
+        print(f"取得に失敗したため data.json は更新せず、既存の内容を保持します: {data.get('error')}",
+              file=sys.stderr)
     print(json.dumps(data, ensure_ascii=False, indent=2))
+
+    if not data["ok"]:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
