@@ -1,9 +1,17 @@
 {
   "source": "https://ameblo.jp/minmin0507/",
-  "fetched_at": "2026-08-23T12:53:49+09:00",
-  "closures": [],
-  "closures_raw": [],
-  "nighter": null,
+  "fetched_at": "2026-08-23T18:32:25+09:00",
+  "closures": [
+    "2026-08-25",
+    "2026-08-26",
+    "2026-08-28"
+  ],
+  "closures_raw": [
+    "8月25日",
+    "8月26日",
+    "8月28日"
+  ],
+  "nighter": "土曜日はナイター予定 (21時まで)",
   "stocking": [
     {
       "species": "ライギョ",
@@ -29,10 +37,10 @@
     }
   ],
   "latest_stocking": {
-    "date": "2026-08-22",
-    "title": "ライギョ&ナマズ！ 明日１７時まで。",
-    "url": "https://ameblo.jp/minmin0507/entry-12976474845.html",
-    "text": "放流効果 もあり 朝から良く釣れてました。~放流魚~ ライギョ 40cm~90cm"
+    "date": "2026-08-23",
+    "title": "ライギョ&ナマズ！ お知らせ。",
+    "url": "https://ameblo.jp/minmin0507/entry-12976572054.html",
+    "text": "~放流魚~ ライギョ 40cm~90cm"
   },
   "hours": {
     "open": 7,
