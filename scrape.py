@@ -8,6 +8,7 @@ GitHub Actions から定期実行する想定。ブラウザはCORSで直接ブ�
 """
 import re
 import sys
+import time
 import json
 import html as ht
 import urllib.request
@@ -105,18 +106,16 @@ def main():
                 bodies.append({"id": eid, "title": title, "date": date, "body": body})
             except Exception:
                 continue
+            time.sleep(1.5)  # 先方サーバーへの負荷軽減のため、記事取得の間隔を空ける
 
         # --- 最新の放流情報（放流を含む最新記事） ---
+        # 本文の逐語引用はせず、日付・タイトル・元記事への直リンクのみを保持する
+        # （詳細はリンク先の元記事で読んでもらう方針。著作権・利用規約リスクの低減のため）。
         for b in bodies:
             if "放流" in b["body"] or "放流" in b["title"]:
-                sents = re.split(r"[。\n]", b["body"])
-                hits = [s.strip() for s in sents if "放流" in s and len(s.strip()) <= 60]
-                text = "。".join(hits[:3]).strip()
-                if not text:
-                    text = b["title"]
                 data["latest_stocking"] = {
                     "date": b["date"], "title": b["title"],
-                    "url": f"{BASE}/entry-{b['id']}.html", "text": text}
+                    "url": f"{BASE}/entry-{b['id']}.html"}
                 break
 
         # --- 将来の休業日（複数記事を横断して収集） ---
@@ -145,9 +144,9 @@ def main():
                         data["stocking"].append(
                             {"species": sp, "size": f"{int(m.group(1))}cm〜{int(m.group(2))}cm"})
             if not data["nighter"]:
-                mn = re.search(r"(土曜[^。\n]{0,20}ナイター[^。\n]{0,20}?(\d{1,2})時[^。\n]{0,8})", t)
-                if mn:
-                    data["nighter"] = re.sub(r"\s+", " ", mn.group(1)).strip()[:60]
+                # 本文の逐語引用はせず、「ナイター実施あり」という事実の有無だけを保持する
+                if re.search(r"土曜[^。\n]{0,20}ナイター[^。\n]{0,20}?\d{1,2}時", t):
+                    data["nighter"] = True
             if not data["pricing"]:
                 seen_plan = set()
                 for hours, yen in re.findall(r"(\d{1,2})\s*時間\s*(\d{3,5})\s*円", t):

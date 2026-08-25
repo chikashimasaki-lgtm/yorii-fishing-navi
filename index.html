@@ -254,10 +254,10 @@ function render(week,blog){
     const h=blog.hours;
     banner=`<div class="blog">
       <div class="blog-h">🎣 寄居フィッシング 釣り場情報 <a href="${blog.source}" target="_blank">ブログ↗</a></div>
-      ${ls&&ls.text?`<div class="blog-row latest">🆕 最新の放流情報${ls.date?`（${ls.date}）`:""}: <b>${ls.text}</b> <a href="${ls.url}" target="_blank">記事↗</a></div>`:""}
+      ${ls&&ls.url?`<div class="blog-row latest">🆕 最新の放流情報${ls.date?`（${ls.date}）`:""}: <a href="${ls.url}" target="_blank">${ls.title||"記事を見る"} ↗</a></div>`:""}
       ${stock?`<div class="blog-row">🐟 放流魚サイズ: ${stock}</div>`:""}
       ${h?`<div class="blog-row">🕖 営業時間: 平日 ${h.open}:00〜${h.close}:00 / 土曜ナイター ${h.sat_close}:00まで</div>`:""}
-      ${blog.nighter?`<div class="blog-row">🌙 ${blog.nighter}</div>`:""}
+      ${blog.nighter?`<div class="blog-row">🌙 直近の記事で土曜ナイター実施の記載あり（詳細は元記事参照）</div>`:""}
       <div class="blog-row close">🚫 臨時休業: <b>${clo||"直近の告知なし"}</b></div>
       <div class="blog-note">※ ブログ自動取得（${(blog.fetched_at||"").slice(0,16).replace("T"," ")} 時点）。年は推定。釣行前に要確認。ベスト時間は営業時間内で算出。</div>
     </div>`;
